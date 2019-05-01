@@ -210,32 +210,31 @@ resource "aws_route_table_association" "wp_private2_assoc" {
 # SECURITY GROUPS
 
 resource "aws_security_group" "wp_dev_sg" {
-  name = "wp_dev_sg"
+  name        = "wp_dev_sg"
   description = "Used for access to the dev instance"
-  vpc_id = "${aws_vpc.wp_vpc.id}"
+  vpc_id      = "${aws_vpc.wp_vpc.id}"
 
   # SSH
 
   ingress {
-    from_port = 22
-    to_port = 22
-    protocol = "tcp"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
     cidr_blocks = ["${var.localip}"]
   }
 
   # HTTP
 
   ingress {
-    from_port = 80
-    to_port = 80
-    protocol = "tcp"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
     cidr_blocks = ["${var.localip}"]
   }
-
   egress {
-    from_port = 0
-    to_port = 0
-    protocol = "-1"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
 }
@@ -243,23 +242,22 @@ resource "aws_security_group" "wp_dev_sg" {
 # PUBLIC SECURITY GROUP
 
 resource "aws_security_group" "wp_public_sg" {
-  name = "wp_public_sg"
+  name        = "wp_public_sg"
   description = "Used for the elastic load balancer for public access"
-  vpc_id = "${aws_vpc.wp_vpc.id}"
+  vpc_id      = "${aws_vpc.wp_vpc.id}"
 
   # HTTP
 
   ingress {
-    from_port = 80
-    to_port = 80
-    protocol = "tcp"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
-
   egress {
-    from_port = 0
-    to_port = 0
-    protocol = "-1"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
 }
@@ -267,23 +265,22 @@ resource "aws_security_group" "wp_public_sg" {
 # PRIVATE SECURITY GROUP
 
 resource "aws_security_group" "wp_private_sg" {
-  name = "wp_private_sg"
+  name        = "wp_private_sg"
   description = "Used for private instances"
-  vpc_id = "${aws_vpc.wp_vpc.id}"
+  vpc_id      = "${aws_vpc.wp_vpc.id}"
 
   # ACCESS FROM VPC
 
   ingress {
-    from_port = 0
-    to_port = 0
-    protocol = "tcp"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "tcp"
     cidr_blocks = ["${var.vpc_cidr}"]
   }
-
   egress {
-    from_port = 0
-    to_port = 0
-    protocol = "-1"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
 }
@@ -291,21 +288,60 @@ resource "aws_security_group" "wp_private_sg" {
 # RDS SECURITY GROUP
 
 resource "aws_security_group" "wp_rds_sg" {
-  name = "wp_rds_sg"
+  name        = "wp_rds_sg"
   description = "Used for RDS instances"
-  vpc_id = "${aws_vpc.wp_vpc.id}"
+  vpc_id      = "${aws_vpc.wp_vpc.id}"
 
   # SQL ACCESS FROM PUBLIC / PRIVATE SECURITY GROUPS
 
   ingress {
     from_port = 3306
-    to_port = 3306
-    protocol = "tcp"
+    to_port   = 3306
+    protocol  = "tcp"
 
     security_groups = ["${aws_security_group.wp_dev_sg.id}",
       "${aws_security_group.wp_public_sg.id}",
-      "${aws_security_group.wp_private_sg.id}"
+      "${aws_security_group.wp_private_sg.id}",
     ]
   }
 }
 
+# VPC ENDPOINT FOR S3
+
+resource "aws_vpc_endpoint" "wp_private-s3_endpoint" {
+  vpc_id       = "${aws_vpc.wp_vpc.id}"
+  service_name = "com.amazonaws.${var.aws_region}.s3"
+
+  route_table_ids = ["${aws_vpc.wp_vpc.main_route_table_id}",
+    "${aws_route_table.wp_public_rt.id}",
+  ]
+
+  policy = <<POLICY
+{
+    "Statement": [
+      {
+        "Action": "*",
+        "Effect": "Allow",
+        "Resource": "*",
+        "Principal": "*"
+      }
+    ]
+}
+POLICY
+}
+
+# ---------- S3 CODE BUCKET ----------
+
+resource "random_id" "wp_code_bucket" {
+  byte_length = 2
+}
+
+resource "aws_s3_bucket" "code" {
+  bucket        = "${var.domain_name}-${random_id.wp_code_bucket.dec}"
+  acl           = "private"
+  force_destroy = true
+
+  tags {
+    Name = "code bucket"
+  }
+}
